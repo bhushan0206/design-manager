@@ -1,0 +1,122 @@
+// MongoDB Migration Script
+// Execute these commands in MongoDB shell (mongosh) or MongoDB client
+// Make sure to connect to your database first: use template-manager
+
+// Switch to the database
+use('template-manager');
+
+// Create Users Collection with indexes
+db.users.createIndex({ "email": 1 }, { "unique": true });
+db.users.createIndex({ "createdAt": 1 });
+db.users.createIndex({ "role": 1 });
+db.users.createIndex({ "isActive": 1 });
+
+// Create Templates Collection with indexes
+db.templates.createIndex({ "title": "text", "description": "text" });
+db.templates.createIndex({ "category": 1 });
+db.templates.createIndex({ "authorId": 1 });
+db.templates.createIndex({ "createdAt": -1 });
+db.templates.createIndex({ "updatedAt": -1 });
+db.templates.createIndex({ "isPublic": 1 });
+db.templates.createIndex({ "tags": 1 });
+
+// Create Categories Collection with indexes
+db.categories.createIndex({ "name": 1 }, { "unique": true });
+db.categories.createIndex({ "slug": 1 }, { "unique": true });
+
+// Create Template Versions Collection with indexes
+db.template_versions.createIndex({ "templateId": 1, "version": 1 }, { "unique": true });
+db.template_versions.createIndex({ "templateId": 1, "createdAt": -1 });
+
+// Create User Actions Collection with indexes
+db.user_actions.createIndex({ "userId": 1, "targetId": 1, "actionType": 1 }, { "unique": true });
+db.user_actions.createIndex({ "userId": 1, "actionType": 1 });
+db.user_actions.createIndex({ "targetId": 1, "actionType": 1 });
+
+// Create Comments Collection with indexes
+db.comments.createIndex({ "templateId": 1, "createdAt": -1 });
+db.comments.createIndex({ "authorId": 1 });
+db.comments.createIndex({ "parentId": 1 });
+
+// Create Password Reset Tokens Collection with indexes
+db.password_reset_tokens.createIndex({ "email": 1 });
+db.password_reset_tokens.createIndex({ "token": 1 }, { "unique": true });
+db.password_reset_tokens.createIndex({ "expiresAt": 1 }, { "expireAfterSeconds": 0 });
+
+// Insert default categories
+db.categories.insertMany([
+  {
+    "name": "UI Design",
+    "slug": "ui-design",
+    "description": "User interface design templates",
+    "color": "#8B5CF6",
+    "createdAt": new Date()
+  },
+  {
+    "name": "UX Design",
+    "slug": "ux-design",
+    "description": "User experience design templates",
+    "color": "#3B82F6",
+    "createdAt": new Date()
+  },
+  {
+    "name": "System Design",
+    "slug": "system-design",
+    "description": "System architecture design templates",
+    "color": "#10B981",
+    "createdAt": new Date()
+  },
+  {
+    "name": "Architecture",
+    "slug": "architecture",
+    "description": "Software architecture templates",
+    "color": "#F59E0B",
+    "createdAt": new Date()
+  },
+  {
+    "name": "Wireframes",
+    "slug": "wireframes",
+    "description": "Wireframe and mockup templates",
+    "color": "#EF4444",
+    "createdAt": new Date()
+  }
+]);
+
+// Create default admin user
+// Note: You'll need to hash the password before inserting
+// For demo purposes, this uses a pre-hashed version of 'admin123'
+db.users.insertOne({
+  "name": "Admin User",
+  "email": "admin@templatemanager.com",
+  "password": "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VcSAg/9qm", // admin123
+  "role": "admin",
+  "isActive": true,
+  "emailVerified": true,
+  "avatarUrl": "https://api.dicebear.com/7.x/avataaars/svg?seed=admin",
+  "createdAt": new Date(),
+  "updatedAt": new Date(),
+  "lastLoginAt": null,
+  "preferences": {
+    "theme": "light",
+    "emailNotifications": true,
+    "marketingEmails": false
+  }
+});
+
+// Verify collections were created
+print("Collections created:");
+db.runCommand("listCollections").cursor.firstBatch.forEach(printjson);
+
+print("\n✅ Database migration completed successfully!");
+print("\n📋 Collections created:");
+print("  - users (with indexes on email, createdAt, role, isActive)");
+print("  - templates (with text search and category indexes)");
+print("  - categories (with default categories)");
+print("  - template_versions (for version control)");
+print("  - user_actions (for bookmarks, follows, etc.)");
+print("  - comments (for template discussions)");
+print("  - password_reset_tokens (with TTL index)");
+print("\n🔐 Default admin account:");
+print("  Email: admin@templatemanager.com");
+print("  Password: admin123");
+print("  ⚠️  Please change this password after first login!");
