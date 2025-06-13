@@ -1,6 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { TemplateService, CommentService } from "@/lib/api";
+import { AuthStorage } from "@/lib/auth";
+import type { Template, Comment } from "@/lib/db";
 import {
   Download,
   Edit,
@@ -80,81 +83,58 @@ interface Template {
 const TemplateDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [template, setTemplate] = useState<Template>({
-    id: id || "1",
-    title: "User Authentication Flow Template",
-    category: "Authentication",
-    description:
-      "A comprehensive design template for implementing secure user authentication flows in web applications.",
-    designContext:
-      '<div><h2>Design Context</h2><p>This authentication flow is designed for web applications requiring secure user access with multiple authentication options.</p><img src="https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&q=80" alt="Authentication Flow Diagram" /><p>The flow supports email/password, social logins, and two-factor authentication methods.</p></div>',
-    systemImpacts:
-      "<div><h2>System Impacts</h2><p>Implementation of this authentication system will impact:</p><ul><li>User database schema</li><li>API security layers</li><li>Session management</li><li>Frontend routing guards</li></ul></div>",
-    assumptions:
-      "<div><h2>Assumptions</h2><p>This design assumes:</p><ul><li>HTTPS is implemented across all endpoints</li><li>Database encryption for sensitive user data</li><li>Compliance with GDPR and other privacy regulations</li></ul></div>",
-    outOfScope:
-      "<div><h2>Out of Scope</h2><p>The following items are not covered in this design:</p><ul><li>Enterprise SSO integration</li><li>Biometric authentication</li><li>Hardware security keys</li></ul></div>",
-    otherAreasToConsider:
-      "<div><h2>Other Areas to Consider</h2><p>When implementing this design, also consider:</p><ul><li>Rate limiting for login attempts</li><li>Account recovery processes</li><li>Session timeout policies</li></ul></div>",
-    appendix:
-      "<div><h2>Appendix</h2><p>Additional resources:</p><ul><li>OWASP Authentication Best Practices</li><li>NIST Password Guidelines</li><li>Sample implementation code</li></ul></div>",
-    author: {
-      name: "Alex Johnson",
-      avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Alex",
-    },
-    createdAt: "2023-09-15",
-    updatedAt: "2023-10-22",
-    versions: [
-      {
-        id: "v3",
-        versionNumber: "1.2",
-        updatedAt: "2023-10-22",
-        updatedBy: "Alex Johnson",
-      },
-      {
-        id: "v2",
-        versionNumber: "1.1",
-        updatedAt: "2023-10-05",
-        updatedBy: "Alex Johnson",
-      },
-      {
-        id: "v1",
-        versionNumber: "1.0",
-        updatedAt: "2023-09-15",
-        updatedBy: "Alex Johnson",
-      },
-    ],
-    bookmarks: 24,
-    stars: 42,
-    comments: [
-      {
-        id: "c1",
-        author: {
-          name: "Sarah Miller",
-          avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah",
-        },
-        content:
-          "Great template! I especially like the consideration for different authentication methods.",
-        createdAt: "2023-10-18",
-      },
-      {
-        id: "c2",
-        author: {
-          name: "David Chen",
-          avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=David",
-        },
-        content: "Have you considered adding WebAuthn support to this flow?",
-        createdAt: "2023-10-20",
-      },
-    ],
-    isStarred: true,
-    isBookmarked: false,
-  });
+  const [template, setTemplate] = useState<Template | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isStarred, setIsStarred] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(false);
 
   const [showVersions, setShowVersions] = useState(false);
   const [activeTab, setActiveTab] = useState("content");
   const [newComment, setNewComment] = useState("");
-  const [userRole, setUserRole] = useState("read-write"); // Simulated user role: 'read', 'read-write', 'admin'
+  const [userRole, setUserRole] = useState("read");
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // Load template data
+  useEffect(() => {
+    const loadTemplate = async () => {
+      if (!id) return;
+
+      try {
+        setLoading(true);
+        setError(null);
+
+        const user = AuthStorage.getUser();
+        setCurrentUser(user);
+        setUserRole(user?.role || "read");
+
+        const templateData = await TemplateService.getTemplateById(
+          id,
+          user?.id,
+        );
+        if (!templateData) {
+          setError("Template not found");
+          return;
+        }
+
+        setTemplate(templateData);
+        setIsStarred((templateData as any).isStarred || false);
+        setIsBookmarked((templateData as any).isBookmarked || false);
+
+        // Load comments
+        const commentsData = await CommentService.getCommentsByTemplate(id);
+        setComments(commentsData);
+      } catch (err) {
+        console.error("Error loading template:", err);
+        setError("Failed to load template");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTemplate();
+  }, [id]);
 
   const handleEditClick = () => {
     navigate(`/templates/edit/${id}`);
@@ -174,45 +154,90 @@ const TemplateDetail = () => {
     console.log("Exporting template as Markdown");
   };
 
-  const handleToggleStar = () => {
-    setTemplate((prev) => ({
-      ...prev,
-      isStarred: !prev.isStarred,
-      stars: prev.isStarred ? prev.stars - 1 : prev.stars + 1,
-    }));
+  const handleToggleStar = async () => {
+    if (!template || !currentUser) return;
+
+    try {
+      const result = await TemplateService.toggleStar(
+        template._id!,
+        currentUser.id,
+      );
+      setIsStarred(result.isStarred);
+      setTemplate((prev) =>
+        prev ? { ...prev, starCount: result.starCount } : null,
+      );
+    } catch (err) {
+      console.error("Error toggling star:", err);
+    }
   };
 
-  const handleToggleBookmark = () => {
-    setTemplate((prev) => ({
-      ...prev,
-      isBookmarked: !prev.isBookmarked,
-      bookmarks: prev.isBookmarked ? prev.bookmarks - 1 : prev.bookmarks + 1,
-    }));
+  const handleToggleBookmark = async () => {
+    if (!template || !currentUser) return;
+
+    try {
+      const result = await TemplateService.toggleBookmark(
+        template._id!,
+        currentUser.id,
+      );
+      setIsBookmarked(result.isBookmarked);
+      setTemplate((prev) =>
+        prev ? { ...prev, bookmarkCount: result.bookmarkCount } : null,
+      );
+    } catch (err) {
+      console.error("Error toggling bookmark:", err);
+    }
   };
 
-  const handleSubmitComment = (e: React.FormEvent) => {
+  const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || !template || !currentUser) return;
 
-    const newCommentObj: Comment = {
-      id: `c${template.comments.length + 1}`,
-      author: {
-        name: "Current User",
-        avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=CurrentUser",
-      },
-      content: newComment,
-      createdAt: new Date().toISOString().split("T")[0],
-    };
+    try {
+      const comment = await CommentService.createComment({
+        templateId: template._id!,
+        authorId: currentUser.id,
+        authorName: currentUser.name,
+        content: newComment.trim(),
+      });
 
-    setTemplate((prev) => ({
-      ...prev,
-      comments: [...prev.comments, newCommentObj],
-    }));
-
-    setNewComment("");
+      setComments((prev) => [...prev, comment]);
+      setNewComment("");
+    } catch (err) {
+      console.error("Error creating comment:", err);
+    }
   };
 
   const canEdit = userRole === "read-write" || userRole === "admin";
+
+  if (loading) {
+    return (
+      <div className="bg-background min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Loading template...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !template) {
+    return (
+      <div className="bg-background min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold mb-4">Template Not Found</h1>
+          <p className="text-muted-foreground mb-4">
+            {error || "The template you are looking for does not exist."}
+          </p>
+          <button
+            onClick={() => navigate("/")}
+            className="text-primary hover:underline"
+          >
+            Go back to templates
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-background min-h-screen">
@@ -233,15 +258,16 @@ const TemplateDetail = () => {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    variant={template.isStarred ? "default" : "outline"}
+                    variant={isStarred ? "default" : "outline"}
                     size="sm"
                     onClick={handleToggleStar}
                     className="flex items-center gap-1"
+                    disabled={!currentUser}
                   >
                     <Star
-                      className={`h-4 w-4 ${template.isStarred ? "fill-primary-foreground" : ""}`}
+                      className={`h-4 w-4 ${isStarred ? "fill-primary-foreground" : ""}`}
                     />
-                    <span>{template.stars}</span>
+                    <span>{template.starCount}</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -254,15 +280,16 @@ const TemplateDetail = () => {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    variant={template.isBookmarked ? "default" : "outline"}
+                    variant={isBookmarked ? "default" : "outline"}
                     size="sm"
                     onClick={handleToggleBookmark}
                     className="flex items-center gap-1"
+                    disabled={!currentUser}
                   >
                     <Bookmark
-                      className={`h-4 w-4 ${template.isBookmarked ? "fill-primary-foreground" : ""}`}
+                      className={`h-4 w-4 ${isBookmarked ? "fill-primary-foreground" : ""}`}
                     />
-                    <span>{template.bookmarks}</span>
+                    <span>{template.bookmarkCount}</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -329,17 +356,13 @@ const TemplateDetail = () => {
             <div className="flex items-center gap-2">
               <Avatar className="h-8 w-8">
                 <AvatarImage
-                  src={template.author.avatar}
-                  alt={template.author.name}
+                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${template.authorName}`}
+                  alt={template.authorName}
                 />
-                <AvatarFallback>
-                  {template.author.name.charAt(0)}
-                </AvatarFallback>
+                <AvatarFallback>{template.authorName.charAt(0)}</AvatarFallback>
               </Avatar>
               <div>
-                <div className="text-sm font-medium">
-                  {template.author.name}
-                </div>
+                <div className="text-sm font-medium">{template.authorName}</div>
                 <div className="text-xs text-muted-foreground">Author</div>
               </div>
             </div>
@@ -347,54 +370,13 @@ const TemplateDetail = () => {
 
           <p className="text-muted-foreground">{template.description}</p>
 
-          {/* Version history toggle */}
-          {(userRole === "read-write" || userRole === "admin") && (
-            <div className="mt-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowVersions(!showVersions)}
-                className="flex items-center gap-1 text-sm"
-              >
-                {showVersions ? (
-                  <ChevronUp className="h-4 w-4" />
-                ) : (
-                  <ChevronDown className="h-4 w-4" />
-                )}
-                Version History ({template.versions.length})
-              </Button>
-
-              {showVersions && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="mt-2 border rounded-md p-2 bg-muted/30"
-                >
-                  <div className="text-sm font-medium mb-2">
-                    Version History
-                  </div>
-                  {template.versions.map((version) => (
-                    <div
-                      key={version.id}
-                      className="flex justify-between items-center py-1 text-sm"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">
-                          {version.versionNumber}
-                        </Badge>
-                        <span>by {version.updatedBy}</span>
-                      </div>
-                      <span className="text-muted-foreground text-xs">
-                        {version.updatedAt}
-                      </span>
-                    </div>
-                  ))}
-                </motion.div>
-              )}
+          {/* Version info */}
+          <div className="mt-4">
+            <div className="text-sm text-muted-foreground">
+              Version {template.version} • Created{" "}
+              {new Date(template.createdAt).toLocaleDateString()}
             </div>
-          )}
+          </div>
         </div>
 
         {/* Template content tabs */}
@@ -406,76 +388,17 @@ const TemplateDetail = () => {
           <TabsList className="mb-4">
             <TabsTrigger value="content">Content</TabsTrigger>
             <TabsTrigger value="comments">
-              Comments ({template.comments.length})
+              Comments ({comments.length})
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="content" className="space-y-8">
-            {/* Design Context */}
+            {/* Template Content */}
             <Card>
               <CardContent className="pt-6">
-                <div
-                  dangerouslySetInnerHTML={{ __html: template.designContext }}
-                />
+                <div dangerouslySetInnerHTML={{ __html: template.content }} />
               </CardContent>
             </Card>
-
-            {/* System Impacts */}
-            {template.systemImpacts && (
-              <Card>
-                <CardContent className="pt-6">
-                  <div
-                    dangerouslySetInnerHTML={{ __html: template.systemImpacts }}
-                  />
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Assumptions */}
-            {template.assumptions && (
-              <Card>
-                <CardContent className="pt-6">
-                  <div
-                    dangerouslySetInnerHTML={{ __html: template.assumptions }}
-                  />
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Out of Scope */}
-            {template.outOfScope && (
-              <Card>
-                <CardContent className="pt-6">
-                  <div
-                    dangerouslySetInnerHTML={{ __html: template.outOfScope }}
-                  />
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Other Areas to Consider */}
-            {template.otherAreasToConsider && (
-              <Card>
-                <CardContent className="pt-6">
-                  <div
-                    dangerouslySetInnerHTML={{
-                      __html: template.otherAreasToConsider,
-                    }}
-                  />
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Appendix */}
-            {template.appendix && (
-              <Card>
-                <CardContent className="pt-6">
-                  <div
-                    dangerouslySetInnerHTML={{ __html: template.appendix }}
-                  />
-                </CardContent>
-              </Card>
-            )}
           </TabsContent>
 
           <TabsContent value="comments">
@@ -485,24 +408,24 @@ const TemplateDetail = () => {
 
                 {/* Comment list */}
                 <div className="space-y-4 mb-6">
-                  {template.comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-3">
+                  {comments.map((comment) => (
+                    <div key={comment._id} className="flex gap-3">
                       <Avatar className="h-8 w-8">
                         <AvatarImage
-                          src={comment.author.avatar}
-                          alt={comment.author.name}
+                          src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${comment.authorName}`}
+                          alt={comment.authorName}
                         />
                         <AvatarFallback>
-                          {comment.author.name.charAt(0)}
+                          {comment.authorName.charAt(0)}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex-1">
                         <div className="flex items-center justify-between">
                           <div className="font-medium">
-                            {comment.author.name}
+                            {comment.authorName}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {comment.createdAt}
+                            {new Date(comment.createdAt).toLocaleDateString()}
                           </div>
                         </div>
                         <p className="text-sm mt-1">{comment.content}</p>

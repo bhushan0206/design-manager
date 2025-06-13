@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Search, Filter, SortAsc, SortDesc, Plus, Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,6 +12,8 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TemplateService, CategoryService } from "@/lib/api";
+import type { Template, Category } from "@/lib/db";
 
 // Define the TemplateCard component inline since it's not available for import
 interface TemplateCardProps {
@@ -122,183 +125,110 @@ const TemplateCard: React.FC<TemplateCardProps> = ({
   );
 };
 
-interface Template {
-  id: string;
-  title: string;
-  category: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  createdBy: string;
-  version: number;
-  stars: number;
-  bookmarks: number;
-}
-
 interface TemplateGridProps {
+  category?: string;
+  searchQuery?: string;
+  sortBy?: string;
   userRole?: "read" | "read-write" | "admin";
-  onCreateTemplate?: () => void;
-  onEditTemplate?: (id: string) => void;
-  onViewTemplate?: (id: string) => void;
-  onDeleteTemplate?: (id: string) => void;
+  filterByUser?: string;
+  filterByStarred?: boolean;
+  filterByRecent?: boolean;
 }
 
 const TemplateGrid = ({
+  category = "all",
+  searchQuery = "",
+  sortBy = "updatedAt",
   userRole = "read",
-  onCreateTemplate = () => {},
-  onEditTemplate = () => {},
-  onViewTemplate = () => {},
-  onDeleteTemplate = () => {},
+  filterByUser,
+  filterByStarred,
+  filterByRecent,
 }: TemplateGridProps) => {
+  const navigate = useNavigate();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("updatedAt");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [categories, setCategories] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState("all");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data for demonstration
+  // Load templates and categories
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      const mockTemplates: Template[] = [
-        {
-          id: "1",
-          title: "User Authentication Flow",
-          category: "Authentication",
-          description:
-            "A comprehensive design template for implementing secure user authentication with multi-factor options.",
-          createdAt: "2023-05-15T10:30:00Z",
-          updatedAt: "2023-06-20T14:45:00Z",
-          createdBy: "Jane Smith",
-          version: 2,
-          stars: 24,
-          bookmarks: 18,
-        },
-        {
-          id: "2",
-          title: "Dashboard Layout",
-          category: "UI Components",
-          description:
-            "Responsive dashboard layout with customizable widgets and data visualization components.",
-          createdAt: "2023-04-10T09:15:00Z",
-          updatedAt: "2023-06-15T11:20:00Z",
-          createdBy: "John Doe",
-          version: 3,
-          stars: 42,
-          bookmarks: 31,
-        },
-        {
-          id: "3",
-          title: "E-commerce Checkout Process",
-          category: "E-commerce",
-          description:
-            "Step-by-step checkout flow optimized for conversion and user experience.",
-          createdAt: "2023-03-22T13:45:00Z",
-          updatedAt: "2023-05-30T16:10:00Z",
-          createdBy: "Alex Johnson",
-          version: 1,
-          stars: 18,
-          bookmarks: 12,
-        },
-        {
-          id: "4",
-          title: "API Integration Pattern",
-          category: "Backend",
-          description:
-            "Design patterns for seamless integration with third-party APIs and services.",
-          createdAt: "2023-02-18T11:30:00Z",
-          updatedAt: "2023-04-25T09:50:00Z",
-          createdBy: "Sarah Williams",
-          version: 2,
-          stars: 36,
-          bookmarks: 27,
-        },
-        {
-          id: "5",
-          title: "Mobile Navigation",
-          category: "Mobile",
-          description:
-            "Intuitive navigation patterns for mobile applications with gesture support.",
-          createdAt: "2023-01-05T15:20:00Z",
-          updatedAt: "2023-03-12T10:15:00Z",
-          createdBy: "Michael Brown",
-          version: 4,
-          stars: 29,
-          bookmarks: 22,
-        },
-        {
-          id: "6",
-          title: "Data Visualization Components",
-          category: "UI Components",
-          description:
-            "Reusable chart and graph components for effective data visualization.",
-          createdAt: "2023-06-01T08:45:00Z",
-          updatedAt: "2023-06-10T14:30:00Z",
-          createdBy: "Emily Davis",
-          version: 1,
-          stars: 15,
-          bookmarks: 9,
-        },
-      ];
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-      setTemplates(mockTemplates);
+        // Load categories
+        const categoriesData = await CategoryService.getCategories();
+        setCategories(categoriesData);
 
-      // Extract unique categories
-      const uniqueCategories = Array.from(
-        new Set(mockTemplates.map((template) => template.category)),
-      );
-      setCategories(uniqueCategories);
+        // Prepare filters
+        const filters: any = {
+          category: category !== "all" ? category : undefined,
+          search: searchQuery || undefined,
+          sortBy: sortBy as any,
+          sortDirection: "desc" as const,
+        };
 
-      setLoading(false);
-    }, 1000);
-  }, []);
+        // Apply user-specific filters
+        if (filterByUser) {
+          filters.authorId = filterByUser;
+        }
 
-  // Filter and sort templates
-  const filteredTemplates = templates
-    .filter((template) => {
-      // Search filter
-      const matchesSearch =
-        template.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        template.description.toLowerCase().includes(searchQuery.toLowerCase());
+        let templatesData: Template[];
 
-      // Category filter
-      const matchesCategory =
-        categoryFilter === "all" || template.category === categoryFilter;
+        if (filterByStarred) {
+          // This would need user ID - for now, show empty
+          templatesData = [];
+        } else if (filterByRecent) {
+          // Get recently viewed templates - for now, show all sorted by view count
+          filters.sortBy = "views";
+          templatesData = await TemplateService.getTemplates(filters);
+        } else {
+          templatesData = await TemplateService.getTemplates(filters);
+        }
 
-      // Tab filter
-      const matchesTab =
-        activeTab === "all" ||
-        (activeTab === "starred" && template.stars > 0) ||
-        (activeTab === "bookmarked" && template.bookmarks > 0);
-
-      return matchesSearch && matchesCategory && matchesTab;
-    })
-    .sort((a, b) => {
-      // Sort logic
-      let comparison = 0;
-
-      if (sortBy === "title") {
-        comparison = a.title.localeCompare(b.title);
-      } else if (sortBy === "category") {
-        comparison = a.category.localeCompare(b.category);
-      } else if (sortBy === "createdAt") {
-        comparison =
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      } else if (sortBy === "updatedAt") {
-        comparison =
-          new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
-      } else if (sortBy === "stars") {
-        comparison = a.stars - b.stars;
+        setTemplates(templatesData);
+      } catch (err) {
+        console.error("Error loading templates:", err);
+        setError("Failed to load templates");
+      } finally {
+        setLoading(false);
       }
+    };
 
-      return sortDirection === "asc" ? comparison : -comparison;
-    });
+    loadData();
+  }, [
+    category,
+    searchQuery,
+    sortBy,
+    filterByUser,
+    filterByStarred,
+    filterByRecent,
+  ]);
 
-  const toggleSortDirection = () => {
-    setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+  const handleViewTemplate = (id: string) => {
+    navigate(`/templates/${id}`);
+  };
+
+  const handleEditTemplate = (id: string) => {
+    navigate(`/templates/edit/${id}`);
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    if (confirm("Are you sure you want to delete this template?")) {
+      try {
+        await TemplateService.deleteTemplate(id);
+        // Reload templates
+        setTemplates(templates.filter((t) => t._id !== id));
+      } catch (err) {
+        console.error("Error deleting template:", err);
+        alert("Failed to delete template");
+      }
+    }
+  };
+
+  const handleCreateTemplate = () => {
+    navigate("/templates/edit/new");
   };
 
   return (
@@ -315,124 +245,47 @@ const TemplateGrid = ({
             </p>
           </div>
           {(userRole === "read-write" || userRole === "admin") && (
-            <Button onClick={onCreateTemplate} className="shadow-glow">
+            <Button onClick={handleCreateTemplate} className="shadow-glow">
               <Plus className="mr-2 h-4 w-4" /> Create Template
             </Button>
           )}
         </div>
 
-        {/* Tabs for different views */}
-        <Tabs
-          defaultValue="all"
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="w-full"
-        >
-          <TabsList className="glass-effect p-1 h-12 grid w-full md:w-auto grid-cols-3 md:inline-flex">
-            <TabsTrigger
-              value="all"
-              className="data-[state=active]:bg-white data-[state=active]:shadow-md"
-            >
-              All Templates
-            </TabsTrigger>
-            <TabsTrigger
-              value="starred"
-              className="data-[state=active]:bg-white data-[state=active]:shadow-md"
-            >
-              Starred
-            </TabsTrigger>
-            <TabsTrigger
-              value="bookmarked"
-              className="data-[state=active]:bg-white data-[state=active]:shadow-md"
-            >
-              Bookmarked
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        {/* Search, filter and sort controls */}
-        <div className="glass-effect rounded-2xl p-6 border border-white/20">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-grow">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search templates..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 h-12 bg-white/50 border-white/30 focus:bg-white/80 transition-all"
-              />
-            </div>
-            <div className="flex gap-3">
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[200px] h-12 bg-white/50 border-white/30">
-                  <SelectValue placeholder="Filter by category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category} value={category}>
-                      {category}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="w-[200px] h-12 bg-white/50 border-white/30">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="title">Title</SelectItem>
-                  <SelectItem value="category">Category</SelectItem>
-                  <SelectItem value="updatedAt">Last Updated</SelectItem>
-                  <SelectItem value="createdAt">Created Date</SelectItem>
-                  <SelectItem value="stars">Stars</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={toggleSortDirection}
-                className="h-12 w-12 bg-white/50 border-white/30 hover:bg-white/80"
-              >
-                {sortDirection === "asc" ? (
-                  <SortAsc className="h-4 w-4" />
-                ) : (
-                  <SortDesc className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-red-600">{error}</p>
           </div>
-        </div>
+        )}
 
         {/* Templates grid */}
         {loading ? (
           <div className="flex justify-center items-center h-64">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
-        ) : filteredTemplates.length > 0 ? (
+        ) : templates.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 animate-fade-in">
-            {filteredTemplates.map((template, index) => (
+            {templates.map((template, index) => (
               <div
-                key={template.id}
+                key={template._id}
                 className="animate-fade-in"
                 style={{ animationDelay: `${index * 0.1}s` }}
               >
                 <TemplateCard
                   template={{
-                    id: template.id,
+                    id: template._id!,
                     title: template.title,
                     category: template.category,
                     description: template.description,
-                    updatedAt: template.updatedAt,
-                    createdBy: template.createdBy,
+                    updatedAt: template.updatedAt.toISOString(),
+                    createdBy: template.authorName,
                     version: template.version,
-                    stars: template.stars,
-                    bookmarks: template.bookmarks,
+                    stars: template.starCount,
+                    bookmarks: template.bookmarkCount,
                   }}
                   userRole={userRole}
-                  onView={() => onViewTemplate(template.id)}
-                  onEdit={() => onEditTemplate(template.id)}
-                  onDelete={() => onDeleteTemplate(template.id)}
+                  onView={() => handleViewTemplate(template._id!)}
+                  onEdit={() => handleEditTemplate(template._id!)}
+                  onDelete={() => handleDeleteTemplate(template._id!)}
                 />
               </div>
             ))}
@@ -446,16 +299,21 @@ const TemplateGrid = ({
                 </div>
                 <p className="text-muted-foreground text-center mb-4">
                   {searchQuery ||
-                  categoryFilter !== "all" ||
-                  activeTab !== "all"
+                  category !== "all" ||
+                  filterByStarred ||
+                  filterByRecent
                     ? "No templates match your search criteria."
                     : "No templates available. Create your first template!"}
                 </p>
                 {(userRole === "read-write" || userRole === "admin") &&
                   !searchQuery &&
-                  categoryFilter === "all" &&
-                  activeTab === "all" && (
-                    <Button onClick={onCreateTemplate} className="shadow-glow">
+                  category === "all" &&
+                  !filterByStarred &&
+                  !filterByRecent && (
+                    <Button
+                      onClick={handleCreateTemplate}
+                      className="shadow-glow"
+                    >
                       <Plus className="mr-2 h-4 w-4" /> Create Template
                     </Button>
                   )}

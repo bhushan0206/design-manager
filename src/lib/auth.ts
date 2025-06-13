@@ -109,20 +109,45 @@ export class AuthService {
     }
   }
 
-  // Register new user (mock implementation for now)
+  // Register new user
   static async register(
     userData: RegisterData,
   ): Promise<{ user: AuthUser; token: string }> {
-    // TODO: Replace with actual API call
-    // For now, create a mock user
-    const userId = Math.random().toString(36).substring(2, 15);
+    const { UserAPI } = await import("./db");
+
+    // Check if user already exists
+    const existingUser = await UserAPI.findByEmail(
+      userData.email.toLowerCase(),
+    );
+    if (existingUser) {
+      throw new Error("User with this email already exists");
+    }
+
+    // Hash password
+    const hashedPassword = await this.hashPassword(userData.password);
+
+    // Create user in database
+    const dbUser = await UserAPI.create({
+      name: userData.name,
+      email: userData.email.toLowerCase(),
+      password: hashedPassword,
+      role: "read-write",
+      isActive: true,
+      emailVerified: false,
+      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData.email}`,
+      preferences: {
+        theme: "light",
+        emailNotifications: true,
+        marketingEmails: false,
+      },
+    });
 
     const authUser: AuthUser = {
-      id: userId,
-      name: userData.name,
-      email: userData.email,
-      role: "read-write",
-      avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData.email}`,
+      id: dbUser._id!,
+      name: dbUser.name,
+      email: dbUser.email,
+      role: dbUser.role,
+      avatarUrl: dbUser.avatarUrl,
     };
 
     const token = this.generateToken(authUser);
@@ -130,67 +155,130 @@ export class AuthService {
     return { user: authUser, token };
   }
 
-  // Login user (mock implementation for now)
+  // Login user
   static async login(
     credentials: LoginCredentials,
   ): Promise<{ user: AuthUser; token: string }> {
-    // TODO: Replace with actual API call
-    // For now, create a mock successful login
-    if (
-      credentials.email === "demo@example.com" &&
-      credentials.password === "demo123"
-    ) {
-      const authUser: AuthUser = {
-        id: "demo-user-id",
-        name: "Demo User",
-        email: credentials.email,
-        role: "admin",
-        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${credentials.email}`,
-      };
+    const { UserAPI } = await import("./db");
 
-      const token = this.generateToken(authUser);
-      return { user: authUser, token };
+    // Find user by email
+    const dbUser = await UserAPI.findByEmail(credentials.email.toLowerCase());
+    if (!dbUser) {
+      throw new Error("Invalid email or password");
     }
 
-    throw new Error("Invalid email or password");
+    // Check if user is active
+    if (!dbUser.isActive) {
+      throw new Error("Account is deactivated. Please contact support.");
+    }
+
+    // Verify password
+    const isPasswordValid = await this.comparePassword(
+      credentials.password,
+      dbUser.password,
+    );
+    if (!isPasswordValid) {
+      throw new Error("Invalid email or password");
+    }
+
+    // Update last login time
+    await UserAPI.updateById(dbUser._id!, { lastLoginAt: new Date() });
+
+    const authUser: AuthUser = {
+      id: dbUser._id!,
+      name: dbUser.name,
+      email: dbUser.email,
+      role: dbUser.role,
+      avatarUrl: dbUser.avatarUrl,
+    };
+
+    const token = this.generateToken(authUser);
+    return { user: authUser, token };
   }
 
-  // Generate password reset token (mock implementation)
+  // Generate password reset token
   static async generatePasswordResetToken(email: string): Promise<string> {
-    // TODO: Replace with actual API call
+    const { UserAPI, PasswordResetTokenAPI } = await import("./db");
+
+    // Check if user exists
+    const user = await UserAPI.findByEmail(email.toLowerCase());
+    if (!user) {
+      throw new Error("No account found with this email address");
+    }
+
+    // Generate token
     const token =
       Math.random().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15);
 
+    // Set expiration to 1 hour from now
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    // Save token to database
+    await PasswordResetTokenAPI.create({
+      email: email.toLowerCase(),
+      token,
+      expiresAt,
+    });
+
     return token;
   }
 
-  // Reset password with token (mock implementation)
+  // Reset password with token
   static async resetPassword(
     token: string,
     newPassword: string,
   ): Promise<void> {
-    // TODO: Replace with actual API call
-    // For now, just simulate success
+    const { UserAPI, PasswordResetTokenAPI } = await import("./db");
+
     if (!token || !newPassword) {
       throw new Error("Invalid token or password");
     }
+
+    // Find and validate token
+    const resetToken = await PasswordResetTokenAPI.findByToken(token);
+    if (!resetToken) {
+      throw new Error("Invalid or expired reset token");
+    }
+
+    // Check if token is expired
+    if (new Date() > resetToken.expiresAt) {
+      await PasswordResetTokenAPI.deleteByToken(token);
+      throw new Error("Reset token has expired");
+    }
+
+    // Find user
+    const user = await UserAPI.findByEmail(resetToken.email);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Hash new password
+    const hashedPassword = await this.hashPassword(newPassword);
+
+    // Update user password
+    await UserAPI.updateById(user._id!, { password: hashedPassword });
+
+    // Delete the used token
+    await PasswordResetTokenAPI.deleteByToken(token);
   }
 
-  // Get user by ID (mock implementation)
+  // Get user by ID
   static async getUserById(userId: string): Promise<AuthUser | null> {
-    // TODO: Replace with actual API call
-    if (userId === "demo-user-id") {
-      return {
-        id: userId,
-        name: "Demo User",
-        email: "demo@example.com",
-        role: "admin",
-        avatarUrl:
-          "https://api.dicebear.com/7.x/avataaars/svg?seed=demo@example.com",
-      };
+    const { UserAPI } = await import("./db");
+
+    const dbUser = await UserAPI.findById(userId);
+    if (!dbUser) {
+      return null;
     }
-    return null;
+
+    return {
+      id: dbUser._id!,
+      name: dbUser.name,
+      email: dbUser.email,
+      role: dbUser.role,
+      avatarUrl: dbUser.avatarUrl,
+    };
   }
 }
 
