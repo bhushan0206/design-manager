@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
-import { Mail, ArrowLeft, Key, Eye, EyeOff } from "lucide-react";
+import { Mail, ArrowLeft, Key, Eye, EyeOff, Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,11 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AuthService } from "@/lib/auth";
+import {
+  validatePasswordStrength,
+  getPasswordStrengthColor,
+  type PasswordStrengthResult,
+} from "@/lib/password-validation";
 
 const PasswordReset = () => {
   const navigate = useNavigate();
@@ -31,6 +36,9 @@ const PasswordReset = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [passwordStrength, setPasswordStrength] = useState<
+    PasswordStrengthResult | null
+  >(null);
 
   const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,8 +67,8 @@ const PasswordReset = () => {
       return;
     }
 
-    if (newPassword.length < 8) {
-      setError("Password must be at least 8 characters long");
+    if (!passwordStrength?.isValid) {
+      setError("Password must meet all security requirements");
       return;
     }
 
@@ -179,6 +187,7 @@ const PasswordReset = () => {
                 value={newPassword}
                 onChange={(e) => {
                   setNewPassword(e.target.value);
+                  setPasswordStrength(validatePasswordStrength(e.target.value));
                   if (error) setError("");
                 }}
                 required
@@ -198,6 +207,45 @@ const PasswordReset = () => {
                 )}
               </Button>
             </div>
+
+            {/* Password Strength Indicator */}
+            {newPassword && passwordStrength && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    Password strength:
+                  </span>
+                  <span
+                    className={`text-xs font-medium ${passwordStrength.color}`}
+                  >
+                    {passwordStrength.strength}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div
+                    className={`h-1.5 rounded-full transition-all ${getPasswordStrengthColor(
+                      passwordStrength.score,
+                    )}`}
+                    style={{
+                      width: `${(passwordStrength.score / 5) * 100}%`,
+                    }}
+                  ></div>
+                </div>
+                <div className="grid grid-cols-2 gap-1 text-xs">
+                  {passwordStrength.requirements.map((req) => (
+                    <div
+                      key={req.id}
+                      className={`flex items-center gap-1 ${
+                        req.met ? "text-green-600" : "text-gray-400"
+                      }`}
+                    >
+                      <Check className="h-3 w-3" />
+                      {req.label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">

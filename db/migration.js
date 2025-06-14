@@ -7,11 +7,22 @@
  * Usage:
  * 1. Make sure MongoDB is running
  * 2. Update the MONGODB_URI in your .env file
- * 3. Run: node db/migration.js
+ * 3. Install dependencies: npm install bcryptjs
+ * 4. Run: node db/migration.js
  */
 
 const { MongoClient } = require("mongodb");
 require("dotenv").config();
+
+// Check for bcryptjs dependency
+let bcrypt;
+try {
+  bcrypt = require("bcryptjs");
+} catch (error) {
+  console.error("❌ bcryptjs is required for password hashing.");
+  console.error("Please install it by running: npm install bcryptjs");
+  process.exit(1);
+}
 
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/template-manager";
@@ -147,7 +158,6 @@ async function createDatabase() {
 
     // Create default admin user
     console.log("Creating default admin user...");
-    const bcrypt = require("bcryptjs");
     const hashedPassword = await bcrypt.hash("admin123", 12);
 
     const adminUser = {

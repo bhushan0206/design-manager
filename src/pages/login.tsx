@@ -41,10 +41,13 @@ const Login = () => {
     setError("");
 
     try {
+      console.log('Attempting login with:', { email: formData.email });
       const { user, token } = await AuthService.login(formData);
+      console.log('Login successful:', { user: user.name, role: user.role });
       AuthStorage.setAuth(user, token);
       navigate("/", { replace: true });
     } catch (err) {
+      console.error('Login failed:', err);
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setIsLoading(false);

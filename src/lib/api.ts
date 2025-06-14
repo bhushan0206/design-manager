@@ -29,6 +29,7 @@ export interface UpdateTemplateData {
   category?: string;
   tags?: string[];
   isPublic?: boolean;
+  version?: number;
 }
 
 export class TemplateService {
@@ -86,24 +87,35 @@ export class TemplateService {
     if (!template) return null;
 
     // Increment view count
-    await TemplateAPI.incrementViewCount(id);
+    try {
+      await TemplateAPI.incrementViewCount(id);
+    } catch (error) {
+      console.warn('Failed to increment view count:', error);
+    }
 
     // If user is provided, get user actions for this template
     if (userId) {
-      const starAction = await UserActionAPI.findByUserAndTarget(
-        userId,
-        id,
-        "star",
-      );
-      const bookmarkAction = await UserActionAPI.findByUserAndTarget(
-        userId,
-        id,
-        "bookmark",
-      );
+      try {
+        const starAction = await UserActionAPI.findByUserAndTarget(
+          userId,
+          id,
+          "star",
+        );
+        const bookmarkAction = await UserActionAPI.findByUserAndTarget(
+          userId,
+          id,
+          "bookmark",
+        );
 
-      // Add user-specific data (this would be handled differently in a real API)
-      (template as any).isStarred = !!starAction;
-      (template as any).isBookmarked = !!bookmarkAction;
+        // Add user-specific data (this would be handled differently in a real API)
+        (template as any).isStarred = !!starAction;
+        (template as any).isBookmarked = !!bookmarkAction;
+      } catch (error) {
+        // If user actions fail, just set them to false
+        console.warn('Failed to fetch user actions:', error);
+        (template as any).isStarred = false;
+        (template as any).isBookmarked = false;
+      }
     }
 
     return template;

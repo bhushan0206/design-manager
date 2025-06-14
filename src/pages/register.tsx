@@ -15,6 +15,11 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AuthService, AuthStorage } from "@/lib/auth";
+import {
+  validatePasswordStrength,
+  getPasswordStrengthColor,
+  type PasswordStrengthResult,
+} from "@/lib/password-validation";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -29,13 +34,9 @@ const Register = () => {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [passwordStrength, setPasswordStrength] = useState({
-    length: false,
-    uppercase: false,
-    lowercase: false,
-    number: false,
-    special: false,
-  });
+  const [passwordStrength, setPasswordStrength] = useState<
+    PasswordStrengthResult | null
+  >(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -46,13 +47,7 @@ const Register = () => {
 
     // Check password strength
     if (name === "password") {
-      setPasswordStrength({
-        length: value.length >= 8,
-        uppercase: /[A-Z]/.test(value),
-        lowercase: /[a-z]/.test(value),
-        number: /\d/.test(value),
-        special: /[!@#$%^&*(),.?":{}|<>]/.test(value),
-      });
+      setPasswordStrength(validatePasswordStrength(value));
     }
 
     // Clear error when user starts typing
@@ -75,8 +70,8 @@ const Register = () => {
       return false;
     }
 
-    if (formData.password.length < 8) {
-      setError("Password must be at least 8 characters long");
+    if (!passwordStrength?.isValid) {
+      setError("Password must meet all security requirements");
       return false;
     }
 
@@ -117,20 +112,6 @@ const Register = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const getPasswordStrengthColor = () => {
-    const score = Object.values(passwordStrength).filter(Boolean).length;
-    if (score < 2) return "bg-red-500";
-    if (score < 4) return "bg-yellow-500";
-    return "bg-green-500";
-  };
-
-  const getPasswordStrengthText = () => {
-    const score = Object.values(passwordStrength).filter(Boolean).length;
-    if (score < 2) return "Weak";
-    if (score < 4) return "Medium";
-    return "Strong";
   };
 
   return (
@@ -225,57 +206,40 @@ const Register = () => {
                 </div>
 
                 {/* Password Strength Indicator */}
-                {formData.password && (
+                {formData.password && passwordStrength && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-muted-foreground">
                         Password strength:
                       </span>
                       <span
-                        className={`text-xs font-medium ${
-                          getPasswordStrengthText() === "Weak"
-                            ? "text-red-600"
-                            : getPasswordStrengthText() === "Medium"
-                              ? "text-yellow-600"
-                              : "text-green-600"
-                        }`}
+                        className={`text-xs font-medium ${passwordStrength.color}`}
                       >
-                        {getPasswordStrengthText()}
+                        {passwordStrength.strength}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-1.5">
                       <div
-                        className={`h-1.5 rounded-full transition-all ${getPasswordStrengthColor()}`}
+                        className={`h-1.5 rounded-full transition-all ${getPasswordStrengthColor(
+                          passwordStrength.score
+                        )}`}
                         style={{
-                          width: `${(Object.values(passwordStrength).filter(Boolean).length / 5) * 100}%`,
+                          width: `${(passwordStrength.score / 5) * 100}%`,
                         }}
                       ></div>
                     </div>
                     <div className="grid grid-cols-2 gap-1 text-xs">
-                      <div
-                        className={`flex items-center gap-1 ${passwordStrength.length ? "text-green-600" : "text-gray-400"}`}
-                      >
-                        <Check className="h-3 w-3" />
-                        8+ characters
-                      </div>
-                      <div
-                        className={`flex items-center gap-1 ${passwordStrength.uppercase ? "text-green-600" : "text-gray-400"}`}
-                      >
-                        <Check className="h-3 w-3" />
-                        Uppercase
-                      </div>
-                      <div
-                        className={`flex items-center gap-1 ${passwordStrength.lowercase ? "text-green-600" : "text-gray-400"}`}
-                      >
-                        <Check className="h-3 w-3" />
-                        Lowercase
-                      </div>
-                      <div
-                        className={`flex items-center gap-1 ${passwordStrength.number ? "text-green-600" : "text-gray-400"}`}
-                      >
-                        <Check className="h-3 w-3" />
-                        Number
-                      </div>
+                      {passwordStrength.requirements.map((req) => (
+                        <div
+                          key={req.id}
+                          className={`flex items-center gap-1 ${
+                            req.met ? "text-green-600" : "text-gray-400"
+                          }`}
+                        >
+                          <Check className="h-3 w-3" />
+                          {req.label}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
